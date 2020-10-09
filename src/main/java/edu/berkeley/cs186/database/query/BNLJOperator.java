@@ -2,6 +2,7 @@ package edu.berkeley.cs186.database.query;
 
 import java.util.*;
 
+import com.sun.media.jfxmediaimpl.HostUtils;
 import edu.berkeley.cs186.database.TransactionContext;
 import edu.berkeley.cs186.database.common.iterator.BacktrackingIterator;
 import edu.berkeley.cs186.database.databox.DataBox;
@@ -89,6 +90,21 @@ class BNLJOperator extends JoinOperator {
          */
         private void fetchNextLeftBlock() {
             // TODO(proj3_part1): implement
+            if (!leftIterator.hasNext()) {
+                leftRecordIterator = null;
+                leftRecord = null;
+            } else {
+                BacktrackingIterator<Record> leftIter = getBlockIterator(getLeftTableName(), leftIterator,
+                        numBuffers - 2);
+                if (leftIter.hasNext()) {
+                    leftRecordIterator = leftIter;
+                    leftRecordIterator.markNext();
+                    leftRecord = leftRecordIterator.next();
+                } else {
+                    leftRecordIterator = null;
+                    leftRecord = null;
+                }
+            }
         }
 
         /**
@@ -101,6 +117,17 @@ class BNLJOperator extends JoinOperator {
          */
         private void fetchNextRightPage() {
             // TODO(proj3_part1): implement
+            if (rightIterator.hasNext()) {
+                BacktrackingIterator<Record> rightIter = getBlockIterator(getRightTableName(), rightIterator, 1);
+                if (rightIter.hasNext()) {
+                   rightRecordIterator = rightIter;
+                   rightRecordIterator.markNext();
+                } else {
+                    rightRecordIterator = null;
+                }
+            } else {
+                rightRecordIterator = null;
+            }
         }
 
         /**
@@ -111,6 +138,59 @@ class BNLJOperator extends JoinOperator {
          */
         private void fetchNextRecord() {
             // TODO(proj3_part1): implement
+            if (leftRecord == null) {
+                throw new NoSuchElementException();
+            } else if (leftRecordIterator != null && rightRecordIterator != null) {
+                if (rightRecordIterator.hasNext() && leftRecordIterator.hasNext()) {
+                    Record rightRecord = rightRecordIterator.next();
+                    DataBox leftJoinValue = this.leftRecord.getValues().get(BNLJOperator.this.getLeftColumnIndex());
+                    DataBox rightJoinValue = rightRecord.getValues().get(BNLJOperator.this.getRightColumnIndex());
+                    if (leftJoinValue.equals(rightJoinValue)) {
+                        System.out.println("Case One");
+                        nextRecord = joinRecords(leftRecord, rightRecord);
+                    }
+                } else if (leftRecordIterator.hasNext()) {
+                    rightIterator.reset();
+                    rightIterator.markNext();
+                    rightRecordIterator.reset();
+                    rightRecordIterator.markNext();
+                    Record rightRecord = rightRecordIterator.next();
+                    leftRecord = leftRecordIterator.next();
+                    DataBox leftJoinValue = this.leftRecord.getValues().get(BNLJOperator.this.getLeftColumnIndex());
+                    DataBox rightJoinValue = rightRecord.getValues().get(BNLJOperator.this.getRightColumnIndex());
+                    if (leftJoinValue.equals(rightJoinValue)) {
+                        System.out.println("Case Two");
+                        nextRecord = joinRecords(leftRecord, rightRecord);
+                    }
+                } else if (rightIterator.hasNext()) {
+                    leftRecordIterator.reset();
+                    leftRecordIterator.markNext();
+                    leftRecord = leftRecordIterator.next();
+                    fetchNextRightPage();
+                    Record rightRecord = rightRecordIterator.next();
+                    DataBox leftJoinValue = this.leftRecord.getValues().get(BNLJOperator.this.getLeftColumnIndex());
+                    DataBox rightJoinValue = rightRecord.getValues().get(BNLJOperator.this.getRightColumnIndex());
+                    if (leftJoinValue.equals(rightJoinValue)) {
+                        System.out.println("Case Three");
+                        nextRecord = joinRecords(leftRecord, rightRecord);
+                    }
+                } else if (checkBlock()) {
+                    rightIterator.reset();
+                    rightIterator.markNext();
+                    fetchNextRightPage();
+                    fetchNextLeftBlock();
+                    Record rightRecord = rightRecordIterator.next();
+                    DataBox leftJoinValue = this.leftRecord.getValues().get(BNLJOperator.this.getLeftColumnIndex());
+                    DataBox rightJoinValue = rightRecord.getValues().get(BNLJOperator.this.getRightColumnIndex());
+                    if (leftJoinValue.equals(rightJoinValue)) {
+                        System.out.println("Case Four");
+                        nextRecord = joinRecords(leftRecord, rightRecord);
+                    }
+                } else {
+                    System.out.println("No more records to be returned");
+                    nextRecord = null;
+                }
+            }
         }
 
         /**
@@ -125,6 +205,12 @@ class BNLJOperator extends JoinOperator {
             List<DataBox> rightValues = new ArrayList<>(rightRecord.getValues());
             leftValues.addAll(rightValues);
             return new Record(leftValues);
+        }
+
+        private Boolean checkBlock() {
+            BacktrackingIterator<Record> tempBlockIter = getBlockIterator(getLeftTableName(), leftIterator,
+                    numBuffers - 2);
+            return tempBlockIter.hasNext();
         }
 
         /**
