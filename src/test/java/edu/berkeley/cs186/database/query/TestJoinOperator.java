@@ -250,7 +250,7 @@ public class TestJoinOperator {
         // 2 |   x |   x |
         // 1 | x   | x   |
         //   +-----+-----+
-        //    1 2 | 1 2
+        //     1 2 | 1 2
         try(Transaction transaction = d.beginTransaction()) {
             // This whole section is just to generate the tables described above
             Record r1 = TestUtils.createRecordWithAllTypesWithValue(1);
@@ -345,8 +345,8 @@ public class TestJoinOperator {
                     evictPage(4, 1);
                 } else if (count == 200 * 200 * 4) {
                     // Yielding this record should have incurred 2 IOs, one
-                    // to load in the second page of the left table, and to load
-                    // in the second page of the right table
+                    // to load in the second page of the left table, and one to
+                    // load in the first page of the right table
                     checkIOs("at record " + count, 2);
                     evictPage(4, 2);
                     evictPage(3, 1);
@@ -522,7 +522,7 @@ public class TestJoinOperator {
         // 2 |     |   x |
         // 1 |     | x   |
         //   +-----+-----+
-        //    3 4 | 1 2
+        //     3 4 | 1 2
         // Note that the left (vertical) relation will be processed in blocks
         // (B=4)
         d.setWorkMem(4); // B=4

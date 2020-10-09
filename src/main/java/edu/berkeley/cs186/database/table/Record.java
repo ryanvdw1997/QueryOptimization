@@ -7,6 +7,7 @@ import java.util.List;
 import edu.berkeley.cs186.database.common.Buffer;
 import edu.berkeley.cs186.database.databox.DataBox;
 import edu.berkeley.cs186.database.databox.Type;
+import edu.berkeley.cs186.database.databox.TypeId;
 
 /** A Record is just list of DataBoxes. */
 public class Record {
@@ -46,7 +47,16 @@ public class Record {
 
     @Override
     public String toString() {
-        return values.toString();
+        List<String> strings = new ArrayList<>();
+        for (DataBox d: this.values) {
+            if (d.type().getTypeId() == TypeId.STRING) {
+                String s = "\"" + d.toString().replaceAll("\0*$", "") + "\"";
+                strings.add(s);
+            } else {
+                strings.add(d.toString());
+            }
+        }
+        return "[" + String.join(",", strings) + "]";
     }
 
     @Override

@@ -117,16 +117,41 @@ public interface TransactionContext extends AutoCloseable {
 
     // Scans ///////////////////////////////////////////////////////////////////
 
+    /**
+     * Returns an iterator of records in `tableName` sorted in ascending of the
+     * values in `columnName`.
+     */
     Iterator<Record> sortedScan(String tableName, String columnName);
 
+    /**
+     * Returns an iterator of records in `tableName` sorted in ascending of the
+     * values in `columnName`, including only records whose value in that column
+     * is greater than or equal to `startValue`.
+     */
     Iterator<Record> sortedScanFrom(String tableName, String columnName, DataBox startValue);
 
+    /**
+     * Returns an iterator over the records in `tableName` where the value in
+     * `columnName` are equal to `key`.
+     */
     Iterator<Record> lookupKey(String tableName, String columnName, DataBox key);
 
+    /**
+     * Returns a backtracking iterator over all of the records in `tableName`.
+     */
     BacktrackingIterator<Record> getRecordIterator(String tableName);
 
+   /**
+     * Returns a backtracking iterator over all of the pages in `tableName`.
+     */
     BacktrackingIterator<Page> getPageIterator(String tableName);
 
+   /**
+     * Returns a backtracking iterator over records in `tableName`. This method
+     * will consume as many pages as it can from `pageIter` up to a maximum of
+     * `maxPages` pages, and return an iterator over the records on those pages.
+     * `pageIter` must be an iterator over pages of `tableName`.
+     */
     BacktrackingIterator<Record> getBlockIterator(String tableName, Iterator<Page> pageIter, int maxPages);
 
     boolean contains(String tableName, String columnName, DataBox key);

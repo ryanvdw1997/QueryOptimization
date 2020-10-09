@@ -112,7 +112,7 @@ class BNLJOperator extends JoinOperator {
          * should be set to a record iterator over the next page of the right relation that
          * has a record in it.
          *
-         * If there are no more pages in the left relation with records, rightRecordIterator
+         * If there are no more pages in the right relation with records, rightRecordIterator
          * should be set to null.
          */
         private void fetchNextRightPage() {
