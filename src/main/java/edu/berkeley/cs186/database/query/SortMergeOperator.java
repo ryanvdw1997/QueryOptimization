@@ -44,10 +44,10 @@ class SortMergeOperator extends JoinOperator {
      */
     private class SortMergeIterator extends JoinIterator {
         /**
-        * Some member variables are provided for guidance, but there are many possible solutions.
-        * You should implement the solution that's best for you, using any member variables you need.
-        * You're free to use these member variables, but you're not obligated to.
-        */
+         * Some member variables are provided for guidance, but there are many possible solutions.
+         * You should implement the solution that's best for you, using any member variables you need.
+         * You're free to use these member variables, but you're not obligated to.
+         */
         private BacktrackingIterator<Record> leftIterator;
         private BacktrackingIterator<Record> rightIterator;
         private Record leftRecord;
@@ -60,6 +60,78 @@ class SortMergeOperator extends JoinOperator {
             // TODO(proj3_part1): implement
             // Hint: you may find the helper methods getTransaction() and getRecordIterator(tableName)
             // in JoinOperator useful here.
+
+            SortOperator leftSort = new SortOperator(getTransaction(), this.getLeftTableName(), new LeftRecordComparator());
+            String leftTableSorted = leftSort.sort();
+            SortOperator rightSort = new SortOperator(getTransaction(), this.getRightTableName(), new RightRecordComparator());
+            String rightTableSorted = rightSort.sort();
+
+            this.leftIterator = SortMergeOperator.this.getRecordIterator(leftTableSorted);
+            this.rightIterator = SortMergeOperator.this.getRecordIterator(rightTableSorted);
+
+            this.leftRecord = leftIterator.hasNext() ? leftIterator.next() : null;
+            this.rightRecord = rightIterator.hasNext() ? rightIterator.next() : null;
+
+            this.nextRecord = null;
+
+            marked = false;
+            try {
+                fetchNextRecord();
+            } catch (NoSuchElementException e) {
+                this.nextRecord = null;
+            }
+        }
+
+
+        private void fetchNextRecord() {
+
+            if (leftRecord == null) {
+                return;
+            }
+            nextRecord = null;
+
+            do {
+                if (!marked) {
+                    // while r < s
+                    while (leftRecord.getValues().get(SortMergeOperator.this.getRightColumnIndex()).compareTo(
+                            rightRecord.getValues().get(SortMergeOperator.this.getRightColumnIndex())) < 0) {
+                        leftRecord = leftIterator.hasNext() ? leftIterator.next() : null;
+                        if (leftRecord == null) {
+                            break;
+                        }
+                    }
+                    // while r > s
+                    while (leftRecord.getValues().get(SortMergeOperator.this.getRightColumnIndex()).compareTo(
+                            rightRecord.getValues().get(SortMergeOperator.this.getRightColumnIndex())) > 0) {
+                        rightRecord = rightIterator.hasNext() ? rightIterator.next() : null;
+                        if (rightRecord == null) {
+                            break;
+                        }
+                    }
+                    rightIterator.markPrev();
+                    marked = true;
+                }
+                // r == s
+                if (rightRecord != null && leftRecord.getValues().get(SortMergeOperator.this.getRightColumnIndex()).compareTo(
+                        rightRecord.getValues().get(SortMergeOperator.this.getRightColumnIndex())) == 0) {
+                    List<DataBox> leftValues = new ArrayList<>(this.leftRecord.getValues());
+                    List<DataBox> rightValues = new ArrayList<>(this.rightRecord.getValues());
+                    leftValues.addAll(rightValues);
+                    rightRecord = rightIterator.hasNext() ? rightIterator.next() : null;
+                    this.nextRecord = new Record(leftValues);
+                }
+                // rightRecord == null
+                else {
+                    this.rightIterator.reset();
+                    rightRecord = rightIterator.next();
+                    this.leftRecord = leftIterator.hasNext() ? leftIterator.next() : null;
+                    if (this.leftRecord == null) {
+                        break;
+                    }
+                    marked = false;
+                }
+            } while(!hasNext());
+
         }
 
         /**
@@ -70,8 +142,7 @@ class SortMergeOperator extends JoinOperator {
         @Override
         public boolean hasNext() {
             // TODO(proj3_part1): implement
-
-            return false;
+            return this.nextRecord != null;
         }
 
         /**
@@ -83,8 +154,18 @@ class SortMergeOperator extends JoinOperator {
         @Override
         public Record next() {
             // TODO(proj3_part1): implement
+            if (!this.hasNext()) {
+                throw new NoSuchElementException();
+            }
 
-            throw new NoSuchElementException();
+            Record nextRecord = this.nextRecord;
+            try {
+                this.fetchNextRecord();
+            } catch (NoSuchElementException e) {
+                this.nextRecord = null;
+            }
+            return nextRecord;
+
         }
 
         @Override
@@ -96,7 +177,7 @@ class SortMergeOperator extends JoinOperator {
             @Override
             public int compare(Record o1, Record o2) {
                 return o1.getValues().get(SortMergeOperator.this.getLeftColumnIndex()).compareTo(
-                           o2.getValues().get(SortMergeOperator.this.getLeftColumnIndex()));
+                        o2.getValues().get(SortMergeOperator.this.getLeftColumnIndex()));
             }
         }
 
@@ -104,7 +185,7 @@ class SortMergeOperator extends JoinOperator {
             @Override
             public int compare(Record o1, Record o2) {
                 return o1.getValues().get(SortMergeOperator.this.getRightColumnIndex()).compareTo(
-                           o2.getValues().get(SortMergeOperator.this.getRightColumnIndex()));
+                        o2.getValues().get(SortMergeOperator.this.getRightColumnIndex()));
             }
         }
     }

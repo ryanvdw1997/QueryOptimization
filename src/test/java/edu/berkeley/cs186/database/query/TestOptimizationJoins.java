@@ -197,6 +197,7 @@ public class TestOptimizationJoins {
             QueryOperator finalOperator = query.getFinalOperator();
             //inner most joins are the largest tables
             assertTrue(finalOperator.toString().contains("\t\ttable: To2"));
+            System.out.println(finalOperator.toString());
             assertTrue(finalOperator.toString().contains("\t\ttable: To3"));
         }
     }

@@ -72,15 +72,16 @@ public class SortOperator {
      */
     public Run sortRun(Run run) {
         // TODO(proj3_part1): implement
-        ArrayList<Record> inputRuns = new ArrayList<>();
-        Iterator<Record> inputIter = run.iterator();
-        while (inputIter.hasNext()) {
-            inputRuns.add(inputIter.next());
+        List<Record> sortedInput = new ArrayList<>();
+        Iterator<Record> originalRun = run.iterator();
+        while (originalRun.hasNext()) {
+            sortedInput.add(originalRun.next());
         }
-        inputRuns.sort(comparator);
-        Run outputRun = createRun();
-        outputRun.addRecords(inputRuns);
-        return outputRun;
+        sortedInput.sort(this.comparator);
+        Run newRun = createRun();
+        newRun.addRecords(sortedInput);
+
+        return newRun;
     }
 
     /**
@@ -93,21 +94,19 @@ public class SortOperator {
      */
     public Run mergeSortedRuns(List<Run> runs) {
         // TODO(proj3_part1): implement
-        PriorityQueue<Pair<Record, Integer>> pQue = new PriorityQueue<>(new RecordPairComparator());
-        Run outputRun = createRun();
-        int i = 0;
-        for (Run run : runs) {
-            Iterator<Record> recIter = run.iterator();
-            while (recIter.hasNext()) {
-                Pair<Record, Integer> nextPair = new Pair<>(recIter.next(), i);
-                pQue.add(nextPair);
+        PriorityQueue<Pair<Record, Integer>> runsPriorityQueue = new PriorityQueue<>(new RecordPairComparator());
+        for (int i = 0; i < runs.size(); i++) {
+            Iterator<Record> runsIterator = runs.get(i).iterator();
+            while(runsIterator.hasNext()) {
+                runsPriorityQueue.add(new Pair<>(runsIterator.next(), i));
             }
-            ++i;
         }
-        while (!pQue.isEmpty()) {
-            outputRun.addRecord(pQue.poll().getFirst().getValues());
+        Run newRun = createRun();
+        while (!runsPriorityQueue.isEmpty()) {
+            newRun.addRecord(runsPriorityQueue.poll().getFirst().getValues());
         }
-        return outputRun;
+
+        return newRun;
     }
 
     /**
@@ -119,24 +118,16 @@ public class SortOperator {
      */
     public List<Run> mergePass(List<Run> runs) {
         // TODO(proj3_part1): implement
-        List<Run> mergedList = new ArrayList<>();
-        List<Run> runningList = new ArrayList<>();
-        int start = 0;
-        for (int i = 0; i < runs.size(); i++) {
-            if (start == numBuffers - 2|| i == runs.size() - 1) {
-                runningList.add(runs.get(i));
-                mergedList.add(mergeSortedRuns(runningList));
-                runningList.clear();
-                start = 0;
-                if (i == runs.size() - 1) {
-                    break;
-                }
-            } else {
-                runningList.add(runs.get(i));
-                ++start;
+        List<Run> sortedRuns = new ArrayList<>();
+        int inputBuffers = this.numBuffers - 1;
+        while(runs.size() > 0) {
+            List<Run> N_Runs = new ArrayList<>();
+            for (int i = 0; i < inputBuffers; i++) {
+                N_Runs.add(runs.remove(0));
             }
+            sortedRuns.add(mergeSortedRuns(N_Runs));
         }
-        return mergedList;
+        return sortedRuns;
     }
 
     /**
@@ -146,38 +137,27 @@ public class SortOperator {
      */
     public String sort() {
         // TODO(proj3_part1): implement
-        Iterator<Page> tablePages = transaction.getPageIterator(tableName);
-        int numPages = transaction.getNumDataPages(tableName);
-        int i = numPages/numBuffers;
+
         List<Run> sortedRuns = new ArrayList<>();
-        while (i > 0) {
-            if (i == 1) {
-                if (!(numPages%numBuffers == 0)) {
-                    BacktrackingIterator<Record> recIter = transaction.getBlockIterator(tableName, tablePages,
-                                                                numPages%numBuffers);
-                    Run runToBInput = createRunFromIterator(recIter);
-                    sortedRuns.add(sortRun(runToBInput));
-                    --i;
-                } else {
-                    BacktrackingIterator<Record> recIter = transaction.getBlockIterator(tableName, tablePages, numBuffers);
-                    Run runToBInput = createRunFromIterator(recIter);
-                    sortedRuns.add(sortRun(runToBInput));
-                    --i;
-                }
-            } else {
-                BacktrackingIterator<Record> recIter = transaction.getBlockIterator(tableName, tablePages, numBuffers);
-                Run runToBInput = createRunFromIterator(recIter);
-                sortedRuns.add(sortRun(runToBInput));
-                --i;
-            }
+        BacktrackingIterator<Page> p = this.transaction.getPageIterator(this.tableName);
+        int numPages = this.transaction.getNumDataPages(this.tableName);
+        int runSize;
+        if (numPages < this.numBuffers) {
+            runSize = 1;
+        } else {
+            runSize = numPages / this.numBuffers;
         }
-        if (sortedRuns.size() > 1) {
-            while (sortedRuns.size() > 1) {
-                sortedRuns = mergePass(sortedRuns);
-            }
+        while (runSize > 0) {
+            BacktrackingIterator<Record> r = this.transaction.getBlockIterator(this.tableName, p, this.numBuffers);
+            Run tempRun = createRunFromIterator(r);
+            sortedRuns.add(sortRun(tempRun));
+            runSize -= 1;
         }
-        Run finalRun = sortedRuns.get(0);
-        return finalRun.tableName(); // TODO(proj3_part1): replace this!
+        while (sortedRuns.size() > 1) {
+            sortedRuns = mergePass(sortedRuns);
+        }
+
+        return sortedRuns.get(0).tableName(); // TODO(proj3_part1): replace this!
     }
 
     public Iterator<Record> iterator() {
@@ -212,7 +192,7 @@ public class SortOperator {
 
         IntermediateRun() {
             this.tempTableName = SortOperator.this.transaction.createTempTable(
-                                     SortOperator.this.operatorSchema);
+                    SortOperator.this.operatorSchema);
         }
 
         @Override
@@ -275,4 +255,3 @@ public class SortOperator {
         }
     }
 }
-

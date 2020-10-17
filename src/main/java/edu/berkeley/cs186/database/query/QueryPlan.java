@@ -1,5 +1,6 @@
 package edu.berkeley.cs186.database.query;
 
+
 import java.util.*;
 
 import edu.berkeley.cs186.database.TransactionContext;
@@ -238,8 +239,31 @@ public class QueryPlan {
 
         // Get the lowest cost operator from the last pass, add GROUP BY and SELECT
         // operators, and return an iterator on the final operator
-
-        return this.executeNaive(); // TODO(proj3_part2): Replace this!!! Allows you to test intermediate functionality
+        // Pass 1
+        int i = 0;
+        Map<Set<String>, QueryOperator> firstMap = new HashMap<>();
+        Map<Set<String>, QueryOperator> prevMap = new HashMap<>();
+        HashSet<String> startSet = new HashSet<>();
+        startSet.add(startTableName);
+        QueryOperator startAccess = minCostSingleAccess(startTableName);
+        firstMap.put(startSet, startAccess);
+        prevMap.put(startSet, startAccess);
+        for (String singleTable : joinTableNames) {
+            HashSet<String> incomingSet = new HashSet<>();
+            QueryOperator singleAccess = minCostSingleAccess(singleTable);
+            incomingSet.add(singleTable);
+            prevMap.put(incomingSet, singleAccess);
+            firstMap.put(incomingSet, singleAccess);
+        }
+        // Pass i > 1
+        while (i < joinTableNames.size()) {
+            prevMap = minCostJoins(prevMap, firstMap);
+            ++i;
+        }
+        finalOperator = minCostOperator(prevMap);
+        addGroupBy();
+        addProjects();
+        return finalOperator.iterator(); // TODO(proj3_part2): Replace this!!! Allows you to test intermediate functionality
     }
 
     /**
@@ -326,8 +350,6 @@ public class QueryPlan {
      * pushed down select operators
      */
     QueryOperator minCostSingleAccess(String table) {
-        QueryOperator minOp = null;
-
         // Find the cost of a sequential scan of the table
         // minOp = new SequentialScanOperator(this.transaction, table);
 
@@ -341,7 +363,39 @@ public class QueryPlan {
         // 3. Push down SELECT predicates that apply to this table and that were not
         // used for an index scan
 
-        return minOp;
+        // Part 1
+        QueryOperator bestOp = new SequentialScanOperator(transaction, table);
+        int bestEff = bestOp.estimateIOCost();
+
+        // Part 2
+        List<Integer> indCols = getEligibleIndexColumns(table);
+        int indexCol = -1;
+
+        for (Integer col : indCols) {
+            PredicateOperator operator = this.selectOperators.get(col);
+            DataBox value = this.selectDataBoxes.get(col);
+            IndexScanOperator indScan = new IndexScanOperator(this.transaction, table, selectColumnNames.get(col),
+                    operator,
+                    value);
+            int scanEff = indScan.estimateIOCost();
+            if (scanEff <= bestEff) {
+                bestEff = scanEff;
+                indexCol = col;
+                bestOp = indScan;
+            }
+        }
+        // Part 3
+        QueryOperator selOp;
+        if (bestOp.isSequentialScan()) {
+            selOp = addEligibleSelections(bestOp, -1);
+        } else {
+            selOp = addEligibleSelections(bestOp, indexCol);
+        }
+        int finalBoss = selOp.estimateIOCost();
+        if (finalBoss <= bestEff) {
+            return selOp;
+        }
+        return bestOp;
     }
 
     /**
@@ -384,7 +438,7 @@ public class QueryPlan {
      * @return a mapping of table names to a join QueryOperator
      */
     Map<Set<String>, QueryOperator> minCostJoins(Map<Set<String>, QueryOperator> prevMap,
-                                         Map<Set<String>, QueryOperator> pass1Map) {
+                                                 Map<Set<String>, QueryOperator> pass1Map) {
         Map<Set<String>, QueryOperator> map = new HashMap<>();
 
         // TODO(proj3_part2): implement
@@ -412,7 +466,64 @@ public class QueryPlan {
          * --- Then given the operator, use minCostJoinType to calculate the cheapest join with that
          * and the previously joined tables.
          */
+        for (Set<String> prevSet : prevMap.keySet()) {
+            String leftCol = null;
+            String rightCol = null;
+            QueryOperator leftOp = null;
+            QueryOperator rightOp = null;
+            QueryOperator minOp;
+            HashSet<String> newSet = new HashSet<>(prevSet);
+            int holder = 0;
+            for (int i = 0; i < joinTableNames.size(); i++) {
+                String[] leftInfo = getJoinLeftColumnNameByIndex(i);
+                String[] rightInfo = getJoinRightColumnNameByIndex(i);
+                if (prevSet.contains(leftInfo[0])) {
+                    leftCol = leftInfo[1];
+                    leftOp = prevMap.get(prevSet);
+                    holder = i;
+                } else if (prevSet.contains(rightInfo[0])) {
+                    rightCol = rightInfo[1];
+                    rightOp = prevMap.get(prevSet);
+                    holder = i;
+                }
+            }
+            if (leftCol == null && rightCol != null) {
+                String leftTbl = getJoinLeftColumnNameByIndex(holder)[0];
+                for (Set<String> pass1Set : pass1Map.keySet()) {
+                    if (pass1Set.contains(leftTbl)) {
+                        leftCol = getJoinLeftColumnNameByIndex(holder)[1];
+                        leftOp = pass1Map.get(pass1Set);
+                    }
+                }
+                if (leftCol.equals(rightCol)) {
+                    String rightName = getJoinRightColumnNameByIndex(holder)[0];
+                    String leftName = getJoinLeftColumnNameByIndex(holder)[0];
+                    leftCol = leftName+"."+leftCol;
+                    rightCol = rightName+"."+rightCol;
+                }
+                minOp = minCostJoinType(rightOp, leftOp, rightCol, leftCol);
+                newSet.add(leftTbl);
+                map.put(newSet, minOp);
+            } else if (leftCol != null && rightCol == null) {
+                String rightTbl = getJoinRightColumnNameByIndex(holder)[0];
+                for (Set<String> pass1Set : pass1Map.keySet()) {
+                    if (pass1Set.contains(rightTbl)) {
+                        rightCol = getJoinRightColumnNameByIndex(holder)[1];
+                        rightOp = pass1Map.get(pass1Set);
+                    }
+                }
+                if (leftCol.equals(rightCol)) {
+                    String rightName = getJoinRightColumnNameByIndex(holder)[0];
+                    String leftName = getJoinLeftColumnNameByIndex(holder)[0];
+                    leftCol = leftName+"."+leftCol;
+                    rightCol = rightName+"."+rightCol;
+                }
 
+                minOp = minCostJoinType(leftOp, rightOp, leftCol, rightCol);
+                newSet.add(rightTbl);
+                map.put(newSet, minOp);
+            }
+        }
         return map;
     }
 
@@ -484,8 +595,8 @@ public class QueryPlan {
             SequentialScanOperator scanOperator = new SequentialScanOperator(this.transaction, joinTable);
 
             this.finalOperator = new SNLJOperator(finalOperator, scanOperator,
-                                                  this.joinLeftColumnNames.get(index), this.joinRightColumnNames.get(index),
-                                                  this.transaction);
+                    this.joinLeftColumnNames.get(index), this.joinRightColumnNames.get(index),
+                    this.transaction);
 
             index++;
         }
@@ -499,7 +610,7 @@ public class QueryPlan {
             DataBox value = this.selectDataBoxes.get(index);
 
             this.finalOperator = new SelectOperator(this.finalOperator, selectColumn,
-                                                    operator, value);
+                    operator, value);
 
             index++;
         }
@@ -508,7 +619,7 @@ public class QueryPlan {
     private void addGroupBy() {
         if (this.groupByColumn != null) {
             if (this.projectColumns.size() > 2 || (this.projectColumns.size() == 1 &&
-                                                   !this.projectColumns.get(0).equals(this.groupByColumn))) {
+                    !this.projectColumns.get(0).equals(this.groupByColumn))) {
                 throw new QueryPlanException("Can only project columns specified in the GROUP BY clause.");
             }
 
