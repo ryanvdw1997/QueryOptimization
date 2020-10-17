@@ -332,7 +332,6 @@ public class QueryPlan {
                 /* do nothing */
             }
         }
-
         return source;
     }
 
@@ -473,39 +472,55 @@ public class QueryPlan {
             QueryOperator rightOp = null;
             QueryOperator minOp;
             HashSet<String> newSet = new HashSet<>(prevSet);
+            String leftTable = null;
+            String rightTable = null;
             int holder = 0;
             for (int i = 0; i < joinTableNames.size(); i++) {
                 String[] leftInfo = getJoinLeftColumnNameByIndex(i);
                 String[] rightInfo = getJoinRightColumnNameByIndex(i);
                 if (prevSet.contains(leftInfo[0])) {
+                    if (leftInfo[0].equals(rightTable)) {
+                        continue;
+                    }
+                    leftTable = leftInfo[0];
                     leftCol = leftInfo[1];
                     leftOp = prevMap.get(prevSet);
                     holder = i;
                 } else if (prevSet.contains(rightInfo[0])) {
+                    if (rightInfo[0].equals(leftTable)) {
+                        continue;
+                    }
+                    rightTable = rightInfo[0];
                     rightCol = rightInfo[1];
                     rightOp = prevMap.get(prevSet);
                     holder = i;
                 }
             }
             if (leftCol == null && rightCol != null) {
-                String leftTbl = getJoinLeftColumnNameByIndex(holder)[0];
+                leftTable = getJoinLeftColumnNameByIndex(holder)[0];
                 for (Set<String> pass1Set : pass1Map.keySet()) {
-                    if (pass1Set.contains(leftTbl)) {
+                    if (pass1Set.contains(leftTable)) {
                         leftCol = getJoinLeftColumnNameByIndex(holder)[1];
                         leftOp = pass1Map.get(pass1Set);
                     }
                 }
                 if (leftCol.equals(rightCol)) {
-                    String rightName = getJoinRightColumnNameByIndex(holder)[0];
-                    String leftName = getJoinLeftColumnNameByIndex(holder)[0];
-                    leftCol = leftName+"."+leftCol;
-                    rightCol = rightName+"."+rightCol;
+                    leftCol = leftTable + "." + leftCol;
+                    rightCol = rightTable + "." + rightCol;
                 }
                 minOp = minCostJoinType(rightOp, leftOp, rightCol, leftCol);
-                newSet.add(leftTbl);
-                map.put(newSet, minOp);
+                newSet.add(leftTable);
+                newSet.add(rightTable);
+                if (map.containsKey(newSet)) {
+                    if (map.get(newSet).estimateIOCost() > minOp.estimateIOCost()) {
+                        map.put(newSet, minOp);
+                    }
+                } else {
+                    map.put(newSet, minOp);
+                }
             } else if (leftCol != null && rightCol == null) {
                 String rightTbl = getJoinRightColumnNameByIndex(holder)[0];
+                String leftTbl = getJoinLeftColumnNameByIndex(holder)[0];
                 for (Set<String> pass1Set : pass1Map.keySet()) {
                     if (pass1Set.contains(rightTbl)) {
                         rightCol = getJoinRightColumnNameByIndex(holder)[1];
@@ -513,15 +528,19 @@ public class QueryPlan {
                     }
                 }
                 if (leftCol.equals(rightCol)) {
-                    String rightName = getJoinRightColumnNameByIndex(holder)[0];
-                    String leftName = getJoinLeftColumnNameByIndex(holder)[0];
-                    leftCol = leftName+"."+leftCol;
-                    rightCol = rightName+"."+rightCol;
+                    leftCol = leftTbl + "." + leftCol;
+                    rightCol = rightTbl + "." + rightCol;
                 }
-
                 minOp = minCostJoinType(leftOp, rightOp, leftCol, rightCol);
                 newSet.add(rightTbl);
-                map.put(newSet, minOp);
+                newSet.add(leftTbl);
+                if (map.containsKey(newSet)) {
+                    if (map.get(newSet).estimateIOCost() > minOp.estimateIOCost()) {
+                        map.put(newSet, minOp);
+                    }
+                } else {
+                    map.put(newSet, minOp);
+                }
             }
         }
         return map;
